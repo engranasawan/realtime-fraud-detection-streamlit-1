@@ -12,15 +12,36 @@ from pathlib import Path
 def load_artifacts():
     models_dir = Path("models")
 
-    preprocess_pipeline = joblib.load(models_dir / "preprocess_pipeline.joblib")
-    imputer            = joblib.load(models_dir / "post_preprocess_imputer.joblib")
-    lgbm_model         = joblib.load(models_dir / "lightgbm.joblib")
-    iso_model          = joblib.load(models_dir / "isolation_forest.joblib")
+    try:
+        preprocess_pipeline = joblib.load(models_dir / "preprocess_pipeline.joblib")
+    except Exception as e:
+        st.error("❌ Error loading preprocess_pipeline.joblib")
+        st.exception(e)
+        raise
+
+    try:
+        imputer = joblib.load(models_dir / "post_preprocess_imputer.joblib")
+    except Exception as e:
+        st.error("❌ Error loading post_preprocess_imputer.joblib")
+        st.exception(e)
+        raise
+
+    try:
+        lgbm_model = joblib.load(models_dir / "lightgbm.joblib")
+    except Exception as e:
+        st.error("❌ Error loading lightgbm.joblib")
+        st.exception(e)
+        raise
+
+    try:
+        iso_model = joblib.load(models_dir / "isolation_forest.joblib")
+    except Exception as e:
+        st.error("❌ Error loading isolation_forest.joblib")
+        st.exception(e)
+        raise
 
     return preprocess_pipeline, imputer, lgbm_model, iso_model
 
-
-preprocess_pipeline, imputer, lgbm_model, iso_model = load_artifacts()
 
 # ==============================
 # 2. Risk thresholds & logic
