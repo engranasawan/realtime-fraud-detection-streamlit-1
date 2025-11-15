@@ -143,12 +143,47 @@ def risk_from_scores(fraud_prob: float, anomaly_score: float) -> str:
         return "LOW"
 
 
-def score_transaction(input_dict: dict):
+# ==============================
+# 2.5. Helper: align input columns to pipeline
+# ==============================
+
+def build_model_input(input_dict: dict) -> pd.DataFrame:
     """
-    input_dict must contain the final feature columns used in training:
-    Amount, TransactionType, Location, DeviceID, Channel, hour, day_of_week, month
+    Build a DataFrame from the raw input and align its columns to what
+    the fitted preprocess_pipeline expects (feature_names_in_).
+
+    Any missing columns are added with NaN, and columns are reordered
+    to match the training schema.
     """
     df = pd.DataFrame([input_dict])
+
+    # If the pipeline exposes feature_names_in_, use that as truth
+    expected_cols = getattr(preprocess_pipeline, "feature_names_in_", None)
+
+    if expected_cols is not None:
+        expected_cols = list(expected_cols)
+
+        # Add any missing columns with NaN
+        for col in expected_cols:
+            if col not in df.columns:
+                df[col] = np.nan
+
+        # Reorder to match training
+        df = df[expected_cols]
+
+    # If feature_names_in_ is not present (older sklearn), we just rely on current df
+    return df
+
+
+def score_transaction(input_dict: dict):
+    """
+    input_dict must contain at least the core feature columns used in training:
+    Amount, TransactionType, Location, DeviceID, Channel, hour, day_of_week, month
+
+    build_model_input() will add any other expected columns with NaN, so that
+    the ColumnTransformer does not complain about missing columns.
+    """
+    df = build_model_input(input_dict)
 
     # 1) Preprocess (same pipeline as during training)
     X_prep = preprocess_pipeline.transform(df)
