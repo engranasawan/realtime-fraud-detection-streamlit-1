@@ -1,4 +1,3 @@
-import ast
 import datetime
 from pathlib import Path
 
@@ -6,87 +5,14 @@ import joblib
 import numpy as np
 import pandas as pd
 import streamlit as st
-from sklearn.base import BaseEstimator, TransformerMixin
-
-# ------------------------------------------------------------------
-# Monkeypatch for sklearn internal class (_RemainderColsList)
-# to make joblib unpickling of ColumnTransformer work across versions
-# ------------------------------------------------------------------
-try:
-    from sklearn.compose import _column_transformer as _ct
-
-    if not hasattr(_ct, "_RemainderColsList"):
-        class _RemainderColsList(list):
-            """Minimal stub for backward compatibility with pickled pipelines."""
-            pass
-
-        _ct._RemainderColsList = _RemainderColsList
-except Exception:
-    # If sklearn import fails for some reason, we'll surface that later in load_artifacts
-    pass
-
-
-# ==============================
-# 0. Custom transformers used in the pipeline
-# ==============================
-
-class FraudFeatureEngineer(BaseEstimator, TransformerMixin):
-    """
-    Custom feature engineering transformer used in the training pipeline.
-
-    NOTE: This implementation is intentionally minimal. It preserves the
-    interface so that joblib can unpickle the saved preprocess_pipeline.
-    If your original Colab version had additional logic inside transform(),
-    you can copy that code here to exactly match training.
-    """
-
-    def __init__(self, *args, **kwargs):
-        # Accept *args, **kwargs to be compatible with how it was constructed when training
-        pass
-
-    def fit(self, X, y=None):
-        return self
-
-    def transform(self, X):
-        # Identity transform; keeps columns as-is.
-        X = X.copy()
-        return X
-
-
-class FrequencyEncoder(BaseEstimator, TransformerMixin):
-    """
-    Custom frequency encoder used during training.
-
-    This stub is kept minimal just to satisfy joblib unpickling.
-    If your original implementation stored frequency maps and applied
-    them to specific categorical columns, you can paste that logic here.
-    """
-
-    def __init__(self, *args, **kwargs):
-        # Accept generic args to be compatible with pickled params
-        pass
-
-    def fit(self, X, y=None):
-        # In the original version you might have computed frequency maps here.
-        # For the prototype, we'll skip and act as a no-op.
-        return self
-
-    def transform(self, X):
-        # Identity transform; does not change columns.
-        X = X.copy()
-        return X
-
 
 # ==============================
 # 1. Load artifacts (cached)
 # ==============================
 
+
 @st.cache_resource
 def load_artifacts():
-    """
-    Load all persisted models and preprocessing artifacts from the models/ folder.
-    Cached so they are only loaded once per session.
-    """
     models_dir = Path("models")
 
     def _load(name: str):
@@ -98,40 +24,28 @@ def load_artifacts():
             st.exception(e)
             raise
 
-    preprocess_pipeline = _load("preprocess_pipeline.joblib")
-    imputer = _load("post_preprocess_imputer.joblib")
-    lgbm_model = _load("lightgbm.joblib")
-    iso_model = _load("isolation_forest.joblib")
+    supervised_pipeline = _load("supervised_lgbm_pipeline.joblib")
+    iforest_pipeline = _load("iforest_pipeline.joblib")
 
-    return preprocess_pipeline, imputer, lgbm_model, iso_model
+    return supervised_pipeline, iforest_pipeline
 
 
-preprocess_pipeline, imputer, lgbm_model, iso_model = load_artifacts()
-
+supervised_pipeline, iforest_pipeline = load_artifacts()
 
 # ==============================
 # 2. Risk thresholds & logic
 # ==============================
 
-# LightGBM thresholds from validation search
 FRAUD_MED = 0.00005
 FRAUD_HIGH = 0.00023328
 FRAUD_CRIT = 0.01732857
 
-# Isolation Forest thresholds (tuned)
-ANOM_MED = 0.04   # mild anomaly
-ANOM_HIGH = 0.05  # stronger anomaly
-ANOM_CRIT = 0.08  # extreme anomaly
+ANOM_MED = 0.04
+ANOM_HIGH = 0.05
+ANOM_CRIT = 0.08
 
 
 def risk_from_scores(fraud_prob: float, anomaly_score: float) -> str:
-    """
-    Combined rule:
-    - CRITICAL: either model extremely suspicious
-    - HIGH: fraud_prob clearly high OR (moderate fraud_prob + strong anomaly)
-    - MEDIUM: any moderate signal from either model
-    - LOW: everything looks calm
-    """
     if fraud_prob >= FRAUD_CRIT or anomaly_score >= ANOM_CRIT:
         return "CRITICAL"
     elif fraud_prob >= FRAUD_HIGH or (
@@ -144,86 +58,30 @@ def risk_from_scores(fraud_prob: float, anomaly_score: float) -> str:
         return "LOW"
 
 
-# ==============================
-# 2.5 Safe preprocessing helper
-# ==============================
-
-def safe_preprocess(df: pd.DataFrame, max_iter: int = 5) -> np.ndarray:
-    """
-    Try to run preprocess_pipeline.transform(df).
-    If it complains about missing columns, parse them from the error message,
-    add them with NaN, and retry. Do this up to max_iter times.
-    """
-    df = df.copy()
-
-    for _ in range(max_iter):
-        try:
-            return preprocess_pipeline.transform(df)
-        except ValueError as e:
-            msg = str(e)
-            if "columns are missing:" in msg:
-                # Extract the set of missing columns from the string
-                # Example: "columns are missing: {'foo', 'bar'}"
-                try:
-                    missing_str = msg.split("columns are missing:")[1].strip()
-                    missing_cols = ast.literal_eval(missing_str)
-                except Exception:
-                    # If parsing fails, re-raise the original error
-                    raise e
-
-                if not missing_cols:
-                    raise e
-
-                # Add missing columns with NaN
-                for col in missing_cols:
-                    if col not in df.columns:
-                        df[col] = np.nan
-
-                # Retry in the next loop iteration
-                continue
-            else:
-                # If it's some other ValueError, re-raise
-                raise e
-
-    # If we exhausted attempts, raise an error
-    raise RuntimeError("Failed to satisfy all expected columns for the pipeline.")
-
-
 def score_transaction(input_dict: dict):
     """
-    input_dict must contain at least the core feature columns used in training:
+    input_dict fields:
     Amount, TransactionType, Location, DeviceID, Channel, hour, day_of_week, month
-
-    safe_preprocess() will add any other expected columns with NaN, so that
-    the ColumnTransformer does not complain about missing columns.
     """
     df = pd.DataFrame([input_dict])
 
-    # 1) Preprocess (same pipeline as during training) with safe handling
-    X_prep = safe_preprocess(df)
+    # Supervised fraud probability
+    fraud_prob = float(supervised_pipeline.predict_proba(df)[0, 1])
 
-    # 2) Impute missing values
-    X_imp = imputer.transform(X_prep).astype(np.float32)
+    # IsolationForest decision_function: larger → more normal
+    raw_score = float(iforest_pipeline.decision_function(df)[0])
+    anomaly_score = -raw_score  # invert: higher = more anomalous
 
-    # 3) Supervised fraud probability (LightGBM)
-    fraud_prob = float(lgbm_model.predict_proba(X_imp)[0, 1])
-
-    # 4) Unsupervised anomaly score (Isolation Forest)
-    # decision_function: larger → more normal ⇒ we invert so higher = more anomalous
-    anomaly_score = float(-iso_model.decision_function(X_imp)[0])
-
-    # 5) Final risk level
     risk = risk_from_scores(fraud_prob, anomaly_score)
-
     return fraud_prob, anomaly_score, risk
 
 
 def render_risk_badge(risk: str):
     color_map = {
-        "LOW": "#2e7d32",       # green
-        "MEDIUM": "#f9a825",    # amber
-        "HIGH": "#f57c00",      # orange
-        "CRITICAL": "#c62828",  # red
+        "LOW": "#2e7d32",
+        "MEDIUM": "#f9a825",
+        "HIGH": "#f57c00",
+        "CRITICAL": "#c62828",
     }
     risk_color = color_map.get(risk, "#607d8b")
 
@@ -263,10 +121,9 @@ st.sidebar.markdown(
     """
 **How this works:**
 
-- We apply the **same preprocessing pipeline** used during training.
-- The **LightGBM model** outputs a fraud probability.
-- The **Isolation Forest** outputs an anomaly score.
-- A simple rule-engine combines both into a **risk level**:
+- A single **pipeline** handles preprocessing + the LightGBM classifier.
+- A second pipeline handles preprocessing + Isolation Forest.
+- The two outputs are combined into a final **risk level**:
   - LOW / MEDIUM / HIGH / CRITICAL
 """
 )
@@ -306,13 +163,11 @@ with st.form("txn_form"):
     submitted = st.form_submit_button("🚀 Run Fraud Check")
 
 if submitted:
-    # Combine date & time and extract time-based features
     txn_datetime = datetime.datetime.combine(txn_date, txn_time)
     hour = txn_datetime.hour
-    day_of_week = txn_datetime.weekday()  # 0 = Monday
+    day_of_week = txn_datetime.weekday()
     month = txn_datetime.month
 
-    # Build model payload
     input_payload = {
         "Amount": amount,
         "TransactionType": txn_type,
@@ -335,7 +190,7 @@ if submitted:
         st.metric(
             "Fraud Probability (LightGBM)",
             f"{fraud_prob:.8f}",
-            help="Direct output probability from the supervised LightGBM model.",
+            help="Direct output probability from the supervised model.",
         )
     with col_b:
         st.metric(
@@ -351,8 +206,8 @@ if submitted:
         """
         ### 🧠 How to interpret this
         
-        - **Fraud Probability** is learned from historic labeled data (fraud vs non-fraud).
-        - **Anomaly Score** comes from an unsupervised model trained only on normal behavior.
+        - **Fraud Probability** comes from a supervised LightGBM trained on labeled fraud data.
+        - **Anomaly Score** comes from Isolation Forest trained on normal-only data.
         - The final **Risk Level** is determined using thresholds calibrated on a validation set.
         """
     )
