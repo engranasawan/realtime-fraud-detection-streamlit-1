@@ -1,3 +1,4 @@
+import ast
 import datetime
 from pathlib import Path
 
@@ -144,35 +145,48 @@ def risk_from_scores(fraud_prob: float, anomaly_score: float) -> str:
 
 
 # ==============================
-# 2.5. Helper: align input columns to pipeline
+# 2.5 Safe preprocessing helper
 # ==============================
 
-def build_model_input(input_dict: dict) -> pd.DataFrame:
+def safe_preprocess(df: pd.DataFrame, max_iter: int = 5) -> np.ndarray:
     """
-    Build a DataFrame from the raw input and align its columns to what
-    the fitted preprocess_pipeline expects (feature_names_in_).
-
-    Any missing columns are added with NaN, and columns are reordered
-    to match the training schema.
+    Try to run preprocess_pipeline.transform(df).
+    If it complains about missing columns, parse them from the error message,
+    add them with NaN, and retry. Do this up to max_iter times.
     """
-    df = pd.DataFrame([input_dict])
+    df = df.copy()
 
-    # If the pipeline exposes feature_names_in_, use that as truth
-    expected_cols = getattr(preprocess_pipeline, "feature_names_in_", None)
+    for _ in range(max_iter):
+        try:
+            return preprocess_pipeline.transform(df)
+        except ValueError as e:
+            msg = str(e)
+            if "columns are missing:" in msg:
+                # Extract the set of missing columns from the string
+                # Example: "columns are missing: {'foo', 'bar'}"
+                try:
+                    missing_str = msg.split("columns are missing:")[1].strip()
+                    missing_cols = ast.literal_eval(missing_str)
+                except Exception:
+                    # If parsing fails, re-raise the original error
+                    raise e
 
-    if expected_cols is not None:
-        expected_cols = list(expected_cols)
+                if not missing_cols:
+                    raise e
 
-        # Add any missing columns with NaN
-        for col in expected_cols:
-            if col not in df.columns:
-                df[col] = np.nan
+                # Add missing columns with NaN
+                for col in missing_cols:
+                    if col not in df.columns:
+                        df[col] = np.nan
 
-        # Reorder to match training
-        df = df[expected_cols]
+                # Retry in the next loop iteration
+                continue
+            else:
+                # If it's some other ValueError, re-raise
+                raise e
 
-    # If feature_names_in_ is not present (older sklearn), we just rely on current df
-    return df
+    # If we exhausted attempts, raise an error
+    raise RuntimeError("Failed to satisfy all expected columns for the pipeline.")
 
 
 def score_transaction(input_dict: dict):
@@ -180,13 +194,13 @@ def score_transaction(input_dict: dict):
     input_dict must contain at least the core feature columns used in training:
     Amount, TransactionType, Location, DeviceID, Channel, hour, day_of_week, month
 
-    build_model_input() will add any other expected columns with NaN, so that
+    safe_preprocess() will add any other expected columns with NaN, so that
     the ColumnTransformer does not complain about missing columns.
     """
-    df = build_model_input(input_dict)
+    df = pd.DataFrame([input_dict])
 
-    # 1) Preprocess (same pipeline as during training)
-    X_prep = preprocess_pipeline.transform(df)
+    # 1) Preprocess (same pipeline as during training) with safe handling
+    X_prep = safe_preprocess(df)
 
     # 2) Impute missing values
     X_imp = imputer.transform(X_prep).astype(np.float32)
