@@ -31,15 +31,17 @@ import streamlit as st
 # So an INR threshold of 100000 INR -> in USD = 100000 / 83.2 = 1201.92 USD.
 
 INR_PER_UNIT = {
-    "USD": 83.2,   # 1 USD = 83.2 INR (example)
-    "EUR": 90.5,   # 1 EUR = 90.5 INR (example)
-    "GBP": 105.3,  # 1 GBP = 105.3 INR (example)
-    "AED": 22.7,   # 1 AED = 22.7 INR (example)
-    "SAR": 22.2,   # 1 SAR = 22.2 INR (example)
+    "INR": 1.0,     # base currency
+    "USD": 83.2,    
+    "EUR": 90.5,
+    "GBP": 105.3,
+    "AED": 22.7,
+    "SAR": 22.2,
 }
 
 # Currency list for the dropdown (explicit order you requested)
-CURRENCY_OPTIONS = ["USD", "GBP", "EUR", "AED", "SAR"]
+CURRENCY_OPTIONS = ["INR", "USD", "GBP", "EUR", "AED", "SAR"]
+
 
 # ----------------------------
 # Helpers / Geospatial
