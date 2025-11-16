@@ -378,17 +378,10 @@ def score_transaction_ml(model_pipeline, iforest_pipeline, model_payload: Dict) 
 # ----------------------------
 # 7) Streamlit UI
 # ----------------------------
-st.set_page_config(page_title="AI Powered Real-Time Fraud Detection (INR-base)", page_icon="💳", layout="centered")
-st.title("💳 AI Powered Real-Time Fraud Detection (INR base currency)")
+st.set_page_config(page_title="AI Powered Real-Time Fraud Detection", page_icon="💳", layout="centered")
+st.title("💳 AI Powered Real-Time Fraud Detection")
 st.write("Select currency first — thresholds adapt from canonical INR thresholds. Then select the channel and fill channel-specific fields.")
 
-st.markdown("---")
-st.sidebar.header("Configuration / Notes")
-st.sidebar.markdown("""
-- Base thresholds are defined in **INR** and converted to the chosen currency using the `INR_PER_UNIT` table.
-- Example exchange rates are embedded in the app; replace with live rates for production.
-- If your ML model was trained on INR amounts, convert the transaction amount into INR before scoring (amount_in_inr = amount * INR_PER_UNIT[currency]).
-""")
 
 # === Currency selector (very first page element) ===
 st.markdown("### Global settings")
@@ -397,7 +390,7 @@ currency = st.selectbox("Select currency (affects thresholds)", CURRENCY_OPTIONS
 
 # Show the approximate exchange rate used (transparency)
 rate = INR_PER_UNIT.get(currency, None)
-st.caption(f"Using example rate: 1 {currency} = {rate:,.2f} INR. Replace with live rates in production.")
+st.caption(f"Using rate: 1 {currency} = {rate:,.2f} INR.")
 
 st.markdown("---")
 
