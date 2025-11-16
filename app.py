@@ -299,8 +299,8 @@ def score_transaction_ml(model_pipeline, iforest_pipeline, model_payload: Dict) 
 # ----------------------------
 # Streamlit UI
 # ----------------------------
-st.set_page_config(page_title="Real-Time Fraud Detection (Rules + ML)", page_icon="💳", layout="centered")
-st.title("💳 Real-Time Fraud Detection — Rules + ML")
+st.set_page_config(page_title="AI Powered Real-Time Fraud Detection in Banking Transactions", page_icon="💳", layout="centered")
+st.title("💳 AI Powered Real-Time Fraud Detection in Banking Transactions")
 st.write("Select channel and fill required fields. Optional historical fields enable velocity & behavioural rules.")
 
 st.markdown("---")
