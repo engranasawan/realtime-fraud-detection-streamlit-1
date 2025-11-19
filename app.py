@@ -1,17 +1,5 @@
 # app.py
-"""
-Optimized Real-Time Fraud Detection (single-file)
-- INR default currency; thresholds adaptive to selected currency (INR base)
-- Channel-exclusive UI: only currency/amount/date/time are common
-- Bank channel: no client IP / ip-derived country fields
-- ATM channel: no device fields
-- NetBanking, Mobile App, CreditCard(Mobile/Web), Online Purchase: device checks enabled
-- Credit Card: two modes -> POS (physical) and Mobile/Web (device-aware)
-- Time input selectable (not forced to now)
-- All repeated widget labels use unique keys to avoid StreamlitDuplicateElementId
-- ML outputs scaled to 0-100 for display
-- Rule engine disables device rules for Bank & ATM
-"""
+
 
 import datetime
 from math import radians, sin, cos, asin, sqrt
