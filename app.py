@@ -338,13 +338,13 @@ st.title("💳 AI Powered Real-Time Fraud Detection")
 # Inline 4 fields: Currency, Amount, Date, Time
 col1, col2, col3, col4 = st.columns(4)
 with col1:
-currency = st.selectbox("Select currency", CURRENCIES, index=CURRENCIES.index(DEFAULT_CURRENCY), key="currency_select")
+    currency = st.selectbox("Select currency", CURRENCIES, index=CURRENCIES.index(DEFAULT_CURRENCY), key="currency_select")
 with col2:
-amount = st.number_input(f"Transaction amount ({currency})", min_value=0.0, value=1200.0, step=10.0, key="amount_common")
+    amount = st.number_input(f"Transaction amount ({currency})", min_value=0.0, value=1200.0, step=10.0, key="amount_common")
 with col3:
-txn_date = st.date_input("Transaction date", value=datetime.date.today(), key="txn_date")
+    txn_date = st.date_input("Transaction date", value=datetime.date.today(), key="txn_date")
 with col4:
-txn_time = st.time_input("Transaction time", value=datetime.time(12, 0), key="txn_time")
+    txn_time = st.time_input("Transaction time", value=datetime.time(12, 0), key="txn_time")
 
 
 # Combine for scoring
