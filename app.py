@@ -331,33 +331,30 @@ def combine_final_risk(ml_risk: str, rule_highest: str) -> str:
 # -------------------------
 # STREAMLIT UI
 # -------------------------
-st.set_page_config(page_title="Real-Time Fraud Detection (Optimized)", page_icon="💳", layout="centered")
-st.title("💳 Real-Time Fraud Detection — Enhanced UI & Data Model")
+st.set_page_config(page_title="AI Powered Real-Time Fraud Detection", page_icon="💳", layout="centered")
+st.title("💳 AI Powered Real-Time Fraud Detection")
 
-st.markdown("**Common fields (shown for ALL transactions):** Currency, Amount, Date, Time, Home Address (city/country), Transaction origin location (IP/city/country)")
 
-# Top row: currency and INR rate
-col0, col0b = st.columns([3, 1])
-with col0:
-    currency = st.selectbox("Select currency", CURRENCIES, index=CURRENCIES.index(DEFAULT_CURRENCY), key="currency_select")
-with col0b:
-    st.caption(f"(INR per unit) {currency} = {INR_PER_UNIT[currency]:,.2f} INR")
-
-# Amount + date/time aligned
-col1, col2 = st.columns([1, 1])
+# Inline 4 fields: Currency, Amount, Date, Time
+col1, col2, col3, col4 = st.columns(4)
 with col1:
-    amount = st.number_input(f"Transaction amount ({currency})", min_value=0.0, value=1200.0, step=10.0, key="amount_common")
+currency = st.selectbox("Select currency", CURRENCIES, index=CURRENCIES.index(DEFAULT_CURRENCY), key="currency_select")
 with col2:
-    txn_date = st.date_input("Transaction date", value=datetime.date.today(), key="txn_date")
-    txn_time = st.time_input("Transaction time", value=datetime.time(12, 0), key="txn_time")
+amount = st.number_input(f"Transaction amount ({currency})", min_value=0.0, value=1200.0, step=10.0, key="amount_common")
+with col3:
+txn_date = st.date_input("Transaction date", value=datetime.date.today(), key="txn_date")
+with col4:
+txn_time = st.time_input("Transaction time", value=datetime.time(12, 0), key="txn_time")
 
+
+# Combine for scoring
 txn_dt = datetime.datetime.combine(txn_date, txn_time)
 hour = txn_dt.hour
 day_of_week = txn_dt.weekday()
 month = txn_dt.month
 
-st.markdown("---")
 
+st.markdown("---")
 channel = st.selectbox("Transaction Channel", ["Choose...", "Bank", "Mobile App", "ATM", "Credit Card", "POS", "Online Purchase", "NetBanking"], key="channel_select")
 if channel and channel != "Choose...":
     channel_lower = channel.lower()
