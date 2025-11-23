@@ -10,7 +10,7 @@
 # - Inline comments for KT
 
 import datetime
-import time  # <<< NEW: used for response-time measurement
+import time  # used for response-time measurement
 from math import radians, sin, cos, asin, sqrt
 from pathlib import Path
 from typing import Dict, List, Tuple
@@ -63,7 +63,7 @@ CHANNEL_TXN_TYPES = {
     "netbanking": ["TRANSFER", "BILL_PAY", "PAYMENT"],
 }
 
-# <<< NEW: placeholder model performance metrics
+# Placeholder model performance metrics
 # Replace Nones with actual values from your training/evaluation reports.
 MODEL_PERFORMANCE = {
     "overall": {
@@ -84,7 +84,7 @@ MODEL_PERFORMANCE = {
     },
 }
 
-# <<< NEW: synthetic example transactions for demo/KT
+
 def build_example_transactions() -> pd.DataFrame:
     """
     Build a small synthetic table of example transactions per channel.
@@ -100,7 +100,7 @@ def build_example_transactions() -> pd.DataFrame:
                     "example_type": "GOOD",
                     "transaction_type": txn_types[i % len(txn_types)],
                     "amount_in_inr": 5_000 + i * 2_000,
-                    "fraud_confidence_ml_pct": 0.5 + i * 0.3,  # just illustrative
+                    "fraud_confidence_ml_pct": 0.5 + i * 0.3,  # illustrative
                     "anomaly_score_ml_pct": 0.2 + i * 0.2,
                     "rules_risk": "LOW",
                     "final_risk": "LOW",
@@ -129,23 +129,37 @@ EXAMPLE_TXNS_DF = build_example_transactions()
 # HELPERS
 # -------------------------
 
+
 def inr_to_currency(amount_in_inr: float, currency: str) -> float:
     if currency not in INR_PER_UNIT or INR_PER_UNIT[currency] == 0:
         return amount_in_inr
     return amount_in_inr / INR_PER_UNIT[currency]
 
 
-def clamp_pct(x: float) -> float:
-    """Convert raw value to 0–100% and clamp."""
-    try:
-        v = float(x) * 100.0
-    except Exception:
-        v = 0.0
-    if v < 0:
+def normalize_score(x: float, min_val: float = 0.0, max_val: float = 0.02) -> float:
+    """
+    Normalize an ML score into a 0–100 range for business interpretability.
+
+    For fraud probability:
+      - We assume most interesting values are in [0, 0.02] (0%–2%),
+      - 0 => 0, 0.02 => 100.
+    For anomaly score you can pass a larger max_val, e.g. 0.10.
+    """
+    if x is None:
         return 0.0
-    if v > 100:
-        return 100.0
-    return v
+    try:
+        val = float(x)
+    except Exception:
+        return 0.0
+    # Clamp within expected range
+    if val < min_val:
+        val = min_val
+    if val > max_val:
+        val = max_val
+    if max_val == min_val:
+        return 0.0
+    # Map to 0-100
+    return (val - min_val) / (max_val - min_val) * 100.0
 
 
 def haversine_km(lat1, lon1, lat2, lon2) -> float:
@@ -222,6 +236,9 @@ def score_transaction_ml(
     """
     Core ML scoring wrapper used by the UI and the API.
     Returns (fraud_probability, anomaly_score, ml_risk_label).
+
+    fraud_probability: output of supervised model (0–1).
+    anomaly_score: transformed IsolationForest decision score (0–1-ish).
     """
     amt_for_model = model_payload.get("Amount", 0.0)
     if convert_to_inr:
@@ -293,7 +310,7 @@ def evaluate_rules(payload: Dict, currency: str) -> Tuple[List[Dict], str]:
     ip_country = str(payload.get("ip_country", "") or "").lower()
     declared_country = str(payload.get("declared_country", "") or "").lower()
 
-    # <<< NEW: home vs transaction location
+    # Home vs transaction location
     home_city = str(payload.get("home_city", "") or "").lower()
     home_country = str(payload.get("home_country", "") or "").lower()
     txn_city = str(payload.get("txn_city", "") or "").lower()
@@ -389,7 +406,7 @@ def evaluate_rules(payload: Dict, currency: str) -> Tuple[List[Dict], str]:
     if channel == "atm" and atm_distance_km and atm_distance_km > 300:
         add_rule("ATM distance from last location", "HIGH", f"ATM is {atm_distance_km:.1f} km away.")
 
-    # 10) Card issuing country mismatch
+    # 10) Card issuing country mismatch vs home
     if card_country and home_country and card_country != home_country and amt > MED_AMT:
         add_rule(
             "Card country mismatch vs home country",
@@ -423,7 +440,7 @@ def evaluate_rules(payload: Dict, currency: str) -> Tuple[List[Dict], str]:
     if 10 <= txns_24h < 50:
         add_rule("Elevated velocity (24h)", "MEDIUM", f"{txns_24h} in last 24h.")
 
-    # 13) Time-of-day rules (client req: unusual times + high amount)
+    # 13) Time-of-day rules (unusual times)
     if 0 <= hour <= 5 and monthly_avg < (MED_AMT * 2) and amt > (MED_AMT / 10):
         add_rule(
             "Late-night txn for low-activity customer",
@@ -446,7 +463,7 @@ def evaluate_rules(payload: Dict, currency: str) -> Tuple[List[Dict], str]:
     if 0 < beneficiaries_added_24h < 3:
         add_rule("Beneficiaries recently added", "LOW", f"{beneficiaries_added_24h} beneficiaries added.")
 
-    # 16) Higher-risk countries based on transaction country (not derived IP)
+    # 16) Higher-risk countries based on transaction country
     high_risk_countries = {"nigeria", "romania", "ukraine", "russia"}
     if txn_country and txn_country in high_risk_countries:
         add_rule(
@@ -483,7 +500,7 @@ def evaluate_rules(payload: Dict, currency: str) -> Tuple[List[Dict], str]:
             f"Beneficiary added {beneficiary_added_minutes} minutes ago and transfer amount {amt:.2f} {currency}.",
         )
 
-    # 21) Home vs transaction city/country (client req 3)
+    # 21) Home vs transaction city/country
     if home_country and txn_country and home_country != txn_country:
         sev = "HIGH" if amt >= MED_AMT else "MEDIUM"
         add_rule(
@@ -533,8 +550,8 @@ def combine_final_risk(ml_risk: str, rule_highest: str) -> str:
 
 def build_explanation(
     payload: Dict,
-    fraud_pct: float,
-    anomaly_pct: float,
+    fraud_score: float,
+    anomaly_score: float,
     ml_label: str,
     rules_triggered: List[Dict],
     final_risk: str,
@@ -542,6 +559,8 @@ def build_explanation(
     """
     Human-readable explanation bullets combining ML & rules,
     used to justify scores for auditors / business.
+
+    fraud_score, anomaly_score are expected to be in 0–100 normalized range.
     """
     reasons = []
 
@@ -557,7 +576,7 @@ def build_explanation(
     home_country = payload.get("home_country", "")
 
     reasons.append(
-        f"ML model fraud confidence is {fraud_pct:.2f}%, anomaly score is {anomaly_pct:.2f}%, mapped to ML label **{ml_label}**."
+        f"ML model fraud risk score is {fraud_score:.1f} (0–100), anomaly risk score is {anomaly_score:.1f} (0–100), mapped to ML label **{ml_label}**."
     )
     reasons.append(
         f"Deterministic rules evaluated this as **{final_risk}** after combining ML and rules."
@@ -790,7 +809,7 @@ if channel and channel != "Choose...":
         cvv_provided = True
         device_for_payment = ""
 
-        # <<< NEW: do NOT ask 'Paid using card?' for Credit Card channel
+        # Do NOT ask 'Paid using card?' for Credit Card channel (it's implicit)
         if channel_lower != "credit card":
             card_used = st.checkbox(
                 "Paid using card?",
@@ -1435,8 +1454,9 @@ if channel and channel != "Choose...":
                 currency=currency,
             )
 
-        fraud_pct = clamp_pct(fraud_prob_raw)
-        anomaly_pct = clamp_pct(anomaly_raw)
+        # Normalize for interpretability (0–100)
+        fraud_score = normalize_score(fraud_prob_raw, min_val=0.0, max_val=0.02)
+        anomaly_score = normalize_score(anomaly_raw, min_val=0.0, max_val=0.10)
 
         rules_triggered, rules_highest = evaluate_rules(payload, currency)
 
@@ -1464,16 +1484,16 @@ if channel and channel != "Choose...":
         colA, colB, colC = st.columns(3)
         with colA:
             st.metric(
-                "Fraud Confidence (ML)",
-                f"{fraud_pct:.2f}%",
-                help="Supervised model fraud probability, scaled to 0–100%.",
+                "Fraud Risk Score (0–100)",
+                f"{fraud_score:.1f}",
+                help="Calibrated fraud risk score derived from supervised ML probability.",
             )
             st.metric("ML Risk Label", ml_label)
         with colB:
             st.metric(
-                "Anomaly Score (ML)",
-                f"{anomaly_pct:.2f}%",
-                help="IsolationForest anomaly score, scaled to 0–100% for display.",
+                "Anomaly Risk Score (0–100)",
+                f"{anomaly_score:.1f}",
+                help="Calibrated anomaly risk score derived from IsolationForest.",
             )
             st.metric("Rules-derived highest severity", rules_highest)
         with colC:
@@ -1486,8 +1506,8 @@ if channel and channel != "Choose...":
         st.markdown("### 🧠 ML & Rules Justification")
         explanation_bullets = build_explanation(
             payload,
-            fraud_pct,
-            anomaly_pct,
+            fraud_score,
+            anomaly_score,
             ml_label,
             rules_triggered,
             final_risk,
@@ -1508,7 +1528,7 @@ if channel and channel != "Choose...":
         st.markdown("### 📦 Payload (debug)")
         st.json(payload)
 
-        # Examples section for KT (client req 4)
+        # Examples section for KT
         with st.expander("📚 Example good & fraud transactions for this channel"):
             ch_df = EXAMPLE_TXNS_DF[EXAMPLE_TXNS_DF["channel"] == channel_lower]
             good_df = ch_df[ch_df["example_type"] == "GOOD"]
