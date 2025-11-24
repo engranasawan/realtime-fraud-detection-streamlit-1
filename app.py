@@ -629,7 +629,7 @@ st.title("💳 AI Powered Real-Time Fraud Detection")
 
 # Sidebar: model performance overview (client req 1)
 with st.sidebar:
-    st.markdown("### 📊 Model Performance (offline)")
+    st.markdown("### 📊 Model Performance")
     overall = MODEL_PERFORMANCE["overall"]
     if any(v is not None for v in overall.values()):
         if overall["roc_auc"] is not None:
@@ -642,8 +642,8 @@ with st.sidebar:
             st.metric("Recall (overall)", f"{overall['recall'] * 100:.2f}%")
     else:
         st.caption(
-            "Offline performance metrics not configured yet. "
-            "Populate MODEL_PERFORMANCE in app.py with evaluation results."
+            "AI Powered Realtime Fradulent Transaction Detections"
+            "AI Powered Realtime Fradulent Transaction Detections"
         )
 
 # Inline 4 fields: Currency, Amount, Date, Time
@@ -901,7 +901,7 @@ if channel and channel != "Choose...":
         )
 
     st.markdown("---")
-    st.markdown("#### Channel-specific fields (aligned and grouped)")
+    st.markdown("#### Channel-specific fields")
 
     # Bank
     bank_fields = {}
