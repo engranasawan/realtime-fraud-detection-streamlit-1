@@ -1301,7 +1301,6 @@ if channel and channel != "Choose...":
             help="IP address as seen by the front-end channel.",
         )
        
-        )
         suspicious_ip_flag = st.checkbox(
             "IP flagged by threat intel?",
             value=False,
