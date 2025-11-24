@@ -627,24 +627,7 @@ st.set_page_config(
 )
 st.title("💳 AI Powered Real-Time Fraud Detection")
 
-# Sidebar: model performance overview (client req 1)
-with st.sidebar:
-    st.markdown("### 📊 Model Performance")
-    overall = MODEL_PERFORMANCE["overall"]
-    if any(v is not None for v in overall.values()):
-        if overall["roc_auc"] is not None:
-            st.metric("ROC-AUC (overall)", f"{overall['roc_auc'] * 100:.2f}%")
-        if overall["accuracy"] is not None:
-            st.metric("Accuracy (overall)", f"{overall['accuracy'] * 100:.2f}%")
-        if overall["precision"] is not None:
-            st.metric("Precision (overall)", f"{overall['precision'] * 100:.2f}%")
-        if overall["recall"] is not None:
-            st.metric("Recall (overall)", f"{overall['recall'] * 100:.2f}%")
-    else:
-        st.caption(
-            "AI Powered Realtime Fradulent Transaction Detections"
-            "AI Powered Realtime Fradulent Transaction Detections"
-        )
+
 
 # Inline 4 fields: Currency, Amount, Date, Time
 col1, col2, col3, col4 = st.columns(4)
