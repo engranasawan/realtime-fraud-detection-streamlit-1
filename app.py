@@ -6,11 +6,10 @@
 # - ML & Rules justification block
 # - Response time per transaction
 # - Example “good” & “fraud” transactions per channel
-# - Hooks for model performance metrics
 # - Inline comments for KT
 
 import datetime
-import time  # used for response-time measurement
+import time  # response-time measurement
 from math import radians, sin, cos, asin, sqrt
 from pathlib import Path
 from typing import Dict, List, Tuple
@@ -63,31 +62,10 @@ CHANNEL_TXN_TYPES = {
     "netbanking": ["TRANSFER", "BILL_PAY", "PAYMENT"],
 }
 
-# Placeholder model performance metrics
-# Replace Nones with actual values from your training/evaluation reports.
-MODEL_PERFORMANCE = {
-    "overall": {
-        "roc_auc": None,
-        "accuracy": None,
-        "precision": None,
-        "recall": None,
-    },
-    "channels": {
-        # keys must be lower-case channel names
-        "atm": {"accuracy": None, "precision": None, "recall": None},
-        "credit card": {"accuracy": None, "precision": None, "recall": None},
-        "mobile app": {"accuracy": None, "precision": None, "recall": None},
-        "pos": {"accuracy": None, "precision": None, "recall": None},
-        "online purchase": {"accuracy": None, "precision": None, "recall": None},
-        "bank": {"accuracy": None, "precision": None, "recall": None},
-        "netbanking": {"accuracy": None, "precision": None, "recall": None},
-    },
-}
-
 
 def build_example_transactions() -> pd.DataFrame:
     """
-    Build a small synthetic table of example transactions per channel.
+    Build a synthetic table of example transactions per channel.
     These are illustrative only – not from the real model.
     """
     rows = []
@@ -100,7 +78,7 @@ def build_example_transactions() -> pd.DataFrame:
                     "example_type": "GOOD",
                     "transaction_type": txn_types[i % len(txn_types)],
                     "amount_in_inr": 5_000 + i * 2_000,
-                    "fraud_confidence_ml_pct": 0.5 + i * 0.3,  # illustrative
+                    "fraud_confidence_ml_pct": 0.5 + i * 0.3,
                     "anomaly_score_ml_pct": 0.2 + i * 0.2,
                     "rules_risk": "LOW",
                     "final_risk": "LOW",
@@ -151,14 +129,12 @@ def normalize_score(x: float, min_val: float = 0.0, max_val: float = 0.02) -> fl
         val = float(x)
     except Exception:
         return 0.0
-    # Clamp within expected range
     if val < min_val:
         val = min_val
     if val > max_val:
         val = max_val
     if max_val == min_val:
         return 0.0
-    # Map to 0-100
     return (val - min_val) / (max_val - min_val) * 100.0
 
 
@@ -188,12 +164,7 @@ def load_models():
 
     def _load(name: str):
         path = models_dir / name
-        try:
-            return joblib.load(path)
-        except Exception as e:
-            st.error(f"Error loading model artifact: {name}")
-            st.exception(e)
-            raise
+        return joblib.load(path)
 
     supervised = None
     iforest = None
@@ -264,16 +235,14 @@ def score_transaction_ml(
     try:
         if model_pipeline is not None:
             fraud_prob = float(model_pipeline.predict_proba(model_df)[0, 1])
-    except Exception as e:
-        st.error("Supervised model scoring error - check pipeline input schema")
-        st.exception(e)
+    except Exception:
+        fraud_prob = 0.0
     try:
         if iforest_pipeline is not None:
             raw = float(iforest_pipeline.decision_function(model_df)[0])
             anomaly_score = -raw
-    except Exception as e:
-        st.error("IsolationForest scoring error - check pipeline input schema")
-        st.exception(e)
+    except Exception:
+        anomaly_score = 0.0
 
     label = ml_risk_label(fraud_prob, anomaly_score)
     return fraud_prob, anomaly_score, label
@@ -377,13 +346,13 @@ def evaluate_rules(payload: Dict, currency: str) -> Tuple[List[Dict], str]:
     if txns_24h >= 50:
         add_rule("Very high velocity (24h)", "HIGH", f"{txns_24h} txns in last 24h.")
 
-    # 5) IP / declared mismatch (if you pass declared_country as KYC/home country)
+    # 5) IP / declared mismatch (ip_country is derived from txn_country)
     if ip_country and declared_country and ip_country != declared_country:
         sev = "HIGH" if amt > HIGH_AMT else "MEDIUM"
         add_rule(
             "IP / Declared country mismatch",
             sev,
-            f"IP country '{ip_country}' differs from declared '{declared_country}'.",
+            f"IP/transaction country '{ip_country}' differs from declared '{declared_country}'.",
         )
 
     # 6) Login security
@@ -557,8 +526,7 @@ def build_explanation(
     final_risk: str,
 ) -> List[str]:
     """
-    Human-readable explanation bullets combining ML & rules,
-    used to justify scores for auditors / business.
+    Human-readable explanation bullets combining ML & rules.
 
     fraud_score, anomaly_score are expected to be in 0–100 normalized range.
     """
@@ -576,13 +544,13 @@ def build_explanation(
     home_country = payload.get("home_country", "")
 
     reasons.append(
-        f"ML model fraud risk score is {fraud_score:.1f} (0–100), anomaly risk score is {anomaly_score:.1f} (0–100), mapped to ML label **{ml_label}**."
+        f"ML model fraud risk score is {fraud_score:.1f} (0–100), anomaly risk score is {anomaly_score:.1f} (0–100), mapped to ML label {ml_label}."
     )
     reasons.append(
-        f"Deterministic rules evaluated this as **{final_risk}** after combining ML and rules."
+        f"Deterministic rules evaluated this as {final_risk} after combining ML and rule-based checks."
     )
     reasons.append(
-        f"Transaction context: channel **{channel}**, type **{txn_type}**, amount **{amt:.2f} {currency}**, at hour **{hour}:00**."
+        f"Transaction context: channel {channel}, type {txn_type}, amount {amt:.2f} {currency}, at hour {hour:02d}:00."
     )
 
     if monthly_avg > 0 and amt > 2 * monthly_avg:
@@ -592,11 +560,11 @@ def build_explanation(
 
     if home_country and txn_country and home_country.lower() != txn_country.lower():
         reasons.append(
-            f"Customer home country (**{home_country}**) is different from transaction country (**{txn_country}**)."
+            f"Customer home country ({home_country}) is different from transaction country ({txn_country})."
         )
     if home_city and txn_city and home_city.lower() != txn_city.lower():
         reasons.append(
-            f"Customer home city (**{home_city}**) is different from transaction city (**{txn_city}**)."
+            f"Customer home city ({home_city}) is different from transaction city ({txn_city})."
         )
 
     if 0 <= hour <= 5:
@@ -612,7 +580,7 @@ def build_explanation(
             reverse=True,
         )[:3]
         for r in top_rules:
-            reasons.append(f"Key rule fired: **{r['name']}** – {r['detail']}")
+            reasons.append(f"Key rule fired: {r['name']} – {r['detail']}")
 
     return reasons
 
@@ -627,8 +595,6 @@ st.set_page_config(
 )
 st.title("💳 AI Powered Real-Time Fraud Detection")
 
-
-
 # Inline 4 fields: Currency, Amount, Date, Time
 col1, col2, col3, col4 = st.columns(4)
 with col1:
@@ -641,7 +607,7 @@ with col1:
     )
 with col2:
     amount = st.number_input(
-        f"Transaction amount",
+        "Transaction amount",
         min_value=0.0,
         value=1200.0,
         step=10.0,
@@ -680,20 +646,6 @@ if channel and channel != "Choose...":
     channel_lower = channel.lower()
     st.markdown(f"### Channel: {channel}")
 
-    # Per-channel model metrics in sidebar
-    with st.sidebar:
-        st.markdown("### Channel Metrics")
-        ch_metrics = MODEL_PERFORMANCE["channels"].get(channel_lower, {})
-        if ch_metrics and any(v is not None for v in ch_metrics.values()):
-            if ch_metrics["accuracy"] is not None:
-                st.metric("Accuracy", f"{ch_metrics['accuracy'] * 100:.2f}%")
-            if ch_metrics["precision"] is not None:
-                st.metric("Precision", f"{ch_metrics['precision'] * 100:.2f}%")
-            if ch_metrics["recall"] is not None:
-                st.metric("Recall", f"{ch_metrics['recall'] * 100:.2f}%")
-        else:
-            st.caption("No per-channel metrics configured yet.")
-
     txn_options = CHANNEL_TXN_TYPES.get(channel_lower, ["OTHER"])
     txn_type = st.selectbox(
         "Transaction type",
@@ -705,9 +657,9 @@ if channel and channel != "Choose...":
     # Transaction-type specific panels: TRANSFER / PAYMENT / BILL_PAY
     st.markdown("#### Transaction type details")
 
-    transfer_fields = {}
-    payment_fields = {}
-    billpay_fields = {}
+    transfer_fields: Dict = {}
+    payment_fields: Dict = {}
+    billpay_fields: Dict = {}
 
     # TRANSFER UI
     if str(txn_type).upper() == "TRANSFER":
@@ -854,21 +806,22 @@ if channel and channel != "Choose...":
             key=f"bill_ref_{channel_lower}",
             help="Bill reference or invoice number.",
         )
+        # Streamlit date_input must have a non-None default
         due_date = st.date_input(
             "Bill due date (optional)",
-            value=None,
+            value=datetime.date.today(),
             key=f"bill_due_{channel_lower}",
-            help="Due date printed on the bill, if available.",
+            help="Due date printed on the bill.",
         )
         bill_period_start = st.date_input(
             "Bill period start (optional)",
-            value=None,
+            value=datetime.date.today(),
             key=f"bill_start_{channel_lower}",
             help="Start date of the billing period.",
         )
         bill_period_end = st.date_input(
             "Bill period end (optional)",
-            value=None,
+            value=datetime.date.today(),
             key=f"bill_end_{channel_lower}",
             help="End date of the billing period.",
         )
@@ -877,9 +830,9 @@ if channel and channel != "Choose...":
                 "biller_category": biller_category,
                 "biller_id": biller_id,
                 "bill_reference_number": bill_reference_number,
-                "due_date": str(due_date) if due_date else "",
-                "bill_period_start": str(bill_period_start) if bill_period_start else "",
-                "bill_period_end": str(bill_period_end) if bill_period_end else "",
+                "due_date": str(due_date),
+                "bill_period_start": str(bill_period_start),
+                "bill_period_end": str(bill_period_end),
             }
         )
 
@@ -887,7 +840,7 @@ if channel and channel != "Choose...":
     st.markdown("#### Channel-specific fields")
 
     # Bank
-    bank_fields = {}
+    bank_fields: Dict = {}
     if channel_lower == "bank":
         st.subheader("In-branch (Bank) fields — Identity only")
         id_type = st.selectbox(
@@ -918,7 +871,7 @@ if channel and channel != "Choose...":
         )
 
     # ATM
-    atm_fields = {}
+    atm_fields: Dict = {}
     if channel_lower == "atm":
         st.subheader("ATM fields — card + ATM info (no IP/device)")
         atm_id = st.text_input(
@@ -954,7 +907,7 @@ if channel and channel != "Choose...":
         )
 
     # Mobile App
-    mobile_fields = {}
+    mobile_fields: Dict = {}
     if channel_lower == "mobile app":
         st.subheader("Mobile App fields — device + app telemetry")
         device = st.text_input(
@@ -989,7 +942,7 @@ if channel and channel != "Choose...":
         )
 
     # Credit Card
-    cc_fields = {}
+    cc_fields: Dict = {}
     if channel_lower == "credit card":
         st.subheader("Credit Card: choose mode")
         cc_mode = st.radio(
@@ -1072,7 +1025,7 @@ if channel and channel != "Choose...":
             )
 
     # POS
-    pos_fields = {}
+    pos_fields: Dict = {}
     if channel_lower == "pos":
         st.subheader("POS fields")
         pos_merchant_id = st.text_input(
@@ -1102,7 +1055,7 @@ if channel and channel != "Choose...":
         )
 
     # Online Purchase
-    online_fields = {}
+    online_fields: Dict = {}
     if channel_lower == "online purchase":
         st.subheader("Online Purchase fields (device + addresses)")
         merchant = st.text_input(
@@ -1164,7 +1117,7 @@ if channel and channel != "Choose...":
         )
 
     # NetBanking
-    netbanking_fields = {}
+    netbanking_fields: Dict = {}
     if channel_lower == "netbanking":
         st.subheader("NetBanking fields (device-aware)")
         username = st.text_input(
@@ -1289,10 +1242,9 @@ if channel and channel != "Choose...":
         help="Customer’s KYC country of residence, e.g. 'India'.",
     )
 
+    # Client IP only for non-bank/non-ATM; ip_country is derived below from txn_country
     if channel_lower in ("bank", "atm"):
-        st.info("Bank/ATM: client IP is not collected by design for in-branch and ATM flows.")
         client_ip = ""
-        ip_country = ""
         suspicious_ip_flag = False
     else:
         client_ip = st.text_input(
@@ -1300,7 +1252,6 @@ if channel and channel != "Choose...":
             key=f"client_ip_{channel_lower}",
             help="IP address as seen by the front-end channel.",
         )
-       
         suspicious_ip_flag = st.checkbox(
             "IP flagged by threat intel?",
             value=False,
@@ -1323,6 +1274,9 @@ if channel and channel != "Choose...":
         key=f"txn_country_{channel_lower}",
         help="Country where the transaction originates.",
     )
+
+    # ip_country is derived from transaction country (no separate field)
+    ip_country = txn_country.strip().lower() if txn_country else ""
 
     # Lat/long optional for distance/impossible-travel checks
     last_known_lat = st.number_input(
@@ -1363,7 +1317,7 @@ if channel and channel != "Choose...":
     submit = st.button("🚀 Run Fraud Check", key=f"submit_{channel_lower}")
 
     if submit:
-        # Measure response time from here (client req 9)
+        # Measure response time from here
         start_time = time.perf_counter()
 
         payload: Dict = {
@@ -1424,14 +1378,13 @@ if channel and channel != "Choose...":
 
         convert_to_inr_for_model = False
 
-        with st.spinner("Scoring with ML models..."):
-            fraud_prob_raw, anomaly_raw, ml_label = score_transaction_ml(
-                supervised_pipeline,
-                iforest_pipeline,
-                payload,
-                convert_to_inr=convert_to_inr_for_model,
-                currency=currency,
-            )
+        fraud_prob_raw, anomaly_raw, ml_label = score_transaction_ml(
+            supervised_pipeline,
+            iforest_pipeline,
+            payload,
+            convert_to_inr=convert_to_inr_for_model,
+            currency=currency,
+        )
 
         # Normalize for interpretability (0–100)
         fraud_score = normalize_score(fraud_prob_raw, min_val=0.0, max_val=0.02)
@@ -1507,7 +1460,7 @@ if channel and channel != "Choose...":
         st.markdown("### 📦 Payload (debug)")
         st.json(payload)
 
-        # Examples section for KT
+        # Examples section (per channel)
         with st.expander("📚 Example good & fraud transactions for this channel"):
             ch_df = EXAMPLE_TXNS_DF[EXAMPLE_TXNS_DF["channel"] == channel_lower]
             good_df = ch_df[ch_df["example_type"] == "GOOD"]
