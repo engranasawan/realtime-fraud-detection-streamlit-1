@@ -6,7 +6,7 @@
 # - ML & Rules justification block
 # - Response time per transaction
 # - Example “good” & “fraud” transactions per channel
-# - Inline comments for KT
+# - Inline comments for KT 
 
 import datetime
 import time  # response-time measurement
