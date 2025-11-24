@@ -658,7 +658,7 @@ with col1:
     )
 with col2:
     amount = st.number_input(
-        f"Transaction amount ({currency})",
+        f"Transaction amount",
         min_value=0.0,
         value=1200.0,
         step=10.0,
