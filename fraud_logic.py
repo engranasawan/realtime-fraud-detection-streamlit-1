@@ -1,6 +1,6 @@
 """
 fraud_logic.py
-Aligned 100% with main Streamlit app.py logic.
+Aligned 100% with main Streamlit app.py logic. 
 """
 
 import datetime
