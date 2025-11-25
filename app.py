@@ -1387,8 +1387,8 @@ if channel and channel != "Choose...":
         )
 
         # Normalize for interpretability (0–100)
-        fraud_score = normalize_score(fraud_prob_raw, min_val=0.0, max_val=0.02)
-        anomaly_score = normalize_score(anomaly_raw, min_val=0.0, max_val=0.10)
+        fraud_score = normalize_score(fraud_prob_raw, min_val=0.0, max_val=20)
+        anomaly_score = normalize_score(anomaly_raw, min_val=0.0, max_val=100)
 
         rules_triggered, rules_highest = evaluate_rules(payload, currency)
 
